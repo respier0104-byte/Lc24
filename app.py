@@ -34,7 +34,7 @@ div[data-testid="column"] {
 </style>
 """, unsafe_allow_html=True)
 
-st.set_page_config(page_title="고호계산기 lc0.3", page_icon="📱", layout="centered")
+st.set_page_config(page_title="고호계산기 lc0.4", page_icon="📱", layout="centered")
 
 # ==========================================
 # 전역 변수 및 유틸리티 함수
@@ -94,9 +94,138 @@ if 'a_add_pct' not in st.session_state: st.session_state.a_add_pct = 14.5
 if 'c_calc_rate' not in st.session_state: st.session_state.c_calc_rate = None
 if 'c_calc_months' not in st.session_state: st.session_state.c_calc_months = 0
 if 'quick_month' not in st.session_state: st.session_state.quick_month = "직접 입력"
-if 'calc_table_df' not in st.session_state: st.session_state.calc_table_df = pd.DataFrame()
 if 'content_text' not in st.session_state: st.session_state.content_text = "분석 탭에서 [보고서 생성]을 눌러주세요."
 if 'briefing_text' not in st.session_state: st.session_state.briefing_text = "분석 탭에서 [보고서 생성]을 눌러주세요."
+if 'show_report' not in st.session_state: st.session_state.show_report = False
+
+# -------------------------------------------------------------------------
+# 🚨 [신규 콜백] 에러 방지를 위한 백그라운드 연산 및 데이터 저장 함수
+# -------------------------------------------------------------------------
+def on_calc_limit_click():
+    # 1. 연봉 데이터 파싱 및 추정연봉 보정
+    s25 = parse_int(st.session_state.a_sal_25)
+    s26 = parse_int(st.session_state.a_sal_26)
+    s_est = parse_int(st.session_state.a_sal_est)
+    
+    if s_est == 0:
+        if s25 > 0 and s26 > 0: s_est = (s25 + s26) / 2
+        elif s25 > 0: s_est = s25
+        elif s26 > 0: s_est = s26
+        st.session_state.a_sal_est = f"{int(s_est):,}"
+
+    # 2. 대출금 데이터 파싱
+    debt = parse_int(st.session_state.a_debt_total)
+    card = parse_int(st.session_state.a_card_total)
+    short_card = parse_int(st.session_state.a_short_card)
+    total_current_debt_man = debt + card + short_card
+
+    # 3. 최종 필요금액 결정 (수기 가산 비율 적용)
+    final_req_man = parse_int(st.session_state.a_final_req)
+    bank_pct = st.session_state.a_bank_pct
+    add_pct = st.session_state.a_add_pct
+    multiplier = 1 + (add_pct / 100)
+    
+    if final_req_man == 0 and total_current_debt_man > 0:
+        final_raw = int(total_current_debt_man * 10000 * multiplier)
+        if final_raw <= 40000000:
+            final_amt = ((final_raw + 250000) // 500000) * 500000
+        else:
+            final_amt = ((final_raw // 1000000) + 1) * 1000000 if final_raw % 1000000 >= 300000 else (final_raw // 1000000) * 1000000
+        
+        final_req_man = final_amt // 10000
+        # 🚨 콜백 안에서 업데이트 하므로 에러 발생하지 않음
+        st.session_state.a_final_req = f"{int(final_req_man):,}"
+    else:
+        final_amt = final_req_man * 10000
+
+    sal_won = s_est * 10000
+
+    # 4. 은행 및 햇살론 한도 산출
+    bank_amt = round((sal_won * (bank_pct / 100)) / 500000) * 500000
+
+    base_sun = 7000000 if 20000000 <= sal_won <= 29999999 else 10000000 if 30000000 <= sal_won <= 44600000 else 0
+    sun_amt = min(max(0, final_amt - bank_amt), base_sun) if base_sun > 0 else 0
+    
+    if sun_amt > 0:
+        raw_sun_m = calculate_pmt(sun_amt, 11.0, 84)
+        sun_m = round(raw_sun_m / 10000) * 10000
+    else:
+        sun_m = 0
+
+    sec2_amt = max(0, final_amt - bank_amt - sun_amt)
+    
+    # 5. 월 납입금 산출
+    bp5 = calculate_pmt(bank_amt, 9.0, 60)
+    bp7 = calculate_pmt(bank_amt, 9.0, 84)
+    bp10 = calculate_pmt(bank_amt, 9.0, 120)
+    p_sec2 = calculate_pmt(sec2_amt, 15.0, 72)
+
+    # UI 출력을 위해 계산값들을 Session State에 저장
+    st.session_state.res_final_amt = final_amt
+    st.session_state.res_bank_amt = bank_amt
+    st.session_state.res_sun_amt = sun_amt
+    st.session_state.res_sec2_amt = sec2_amt
+    st.session_state.res_sun_m = sun_m
+    st.session_state.res_bp5 = bp5
+    st.session_state.res_bp7 = bp7
+    st.session_state.res_bp10 = bp10
+    st.session_state.res_p_sec2 = p_sec2
+
+    # 6. 보고서 텍스트 생성
+    cy = st.session_state.a_card_year
+    als = st.session_state.a_all_sim
+    ns = st.session_state.a_na_sim
+    
+    ratio_str = ""
+    if s25 == 0 and s26 == 0 and s_est > 0:
+        sal_block = f"추정연봉 {format_manwon(sal_won)}"
+        ratio_str = f"({int((final_amt / sal_won) * 100)}%)" if sal_won > 0 else ""
+    else:
+        sal_block = f"25납부 {s25}만원\n26납부 {s26}만원"
+        r_list = []
+        if s25 > 0: r_list.append(f"({int((final_amt / (s25*10000)) * 100)}%)")
+        if s26 > 0: r_list.append(f"({int((final_amt / (s26*10000)) * 100)}%)")
+        ratio_str = "".join(r_list)
+
+    card_text_parts = []
+    if card > 0: card_text_parts.append(f"카드 {card}만")
+    if short_card > 0: card_text_parts.append(f"단기 {short_card}만")
+    cd = ", ".join(card_text_parts) + ", " if card_text_parts else ""
+    
+    def line_text(p, b):
+        parts = [format_manwon(b)] + ([format_manwon(sun_m)] if sun_m > 0 else []) + ([format_manwon(p_sec2)] if p_sec2 > 0 else [])
+        return f"[{p}] {'+'.join(parts)} = {format_manwon(b + sun_m + p_sec2)}"
+
+    content = f"{sal_block}\n카드개설 {cy}년\n{cd}올시뮬 {als}, 나시뮬 {ns}\n{format_manwon(total_current_debt_man*10000)} 상환후 {add_pct:g}%포함 약 {format_manwon(final_amt)} {ratio_str}\n\n"
+    content += f"은행 {format_manwon(bank_amt)}\n5년 {format_manwon(bp5)}\n7년 {format_manwon(bp7)}\n10년 {format_manwon(bp10)}\n\n"
+    if sun_m > 0: content += f"햇살론 {format_manwon(sun_m)}\n{format_manwon(sun_amt)}\n\n"
+    if sec2_amt > 0: content += f"2금융 {format_manwon(sec2_amt)}\n{format_manwon(p_sec2)}\n\n"
+    content += f"{line_text('5년', bp5)}\n{line_text('7년', bp7)}\n{line_text('10년', bp10)}"
+
+    brief = f"고객은 가능하며\n{format_manwon(total_current_debt_man*10000)} 상환후 {add_pct:g}%포함 약 {format_manwon(final_amt)}\n\n"
+    brief += f"은행 {format_manwon(bank_amt)}(평균9%대)"
+    if sun_m > 0: brief += f"\n햇살론 {format_manwon(sun_amt)}(평균11%대)"
+    if sec2_amt > 0: brief += f"\n2금 {format_manwon(sec2_amt)}(평균15%대)(6년)"
+    if card > 0 or short_card > 0: brief += f"\n(카드+단기 금액 {format_manwon((card + short_card)*10000)} 포함)"
+    brief += f"\n\n{line_text('5년', bp5)}\n{line_text('7년', bp7)}\n{line_text('10년', bp10)}\n\n"
+    brief += "예상합니다.\n(요즘 은행이 잘안나오기에 은행금액을 75%로 계산했으나\n고객 인지시 연봉대비 65%~85%  말씀해주시면 됩니다.)\n수수료 인지 및 은행 5년 월불입액 동의 후 담당자분 성함, 수수료, \n고객 연락처 주시면 제가 전화 드리도록 하겠습니다!"
+
+    st.session_state.content_text = content.strip()
+    st.session_state.briefing_text = brief.strip()
+    st.session_state.show_report = True
+
+# 🚨 [신규 콜백] 전체 분석 초기화
+def reset_analysis():
+    for key in ['a_sal_25', 'a_sal_26', 'a_sal_est', 'a_debt_total', 'a_card_total', 'a_short_card', 'a_final_req']:
+        st.session_state[key] = "0"
+    for key in ['a_card_year', 'a_all_sim', 'a_na_sim']:
+        st.session_state[key] = ""
+    st.session_state.a_bank_pct = 73.0
+    st.session_state.a_add_pct = 14.5
+    st.session_state.content_text = "분석 탭에서 [보고서 생성]을 눌러주세요."
+    st.session_state.briefing_text = "분석 탭에서 [보고서 생성]을 눌러주세요."
+    st.session_state.show_report = False
+    st.toast("모든 분석 데이터가 초기화되었습니다!", icon="🧹")
 
 def reset_calc():
     st.session_state.c_calc_amt = "0"
@@ -113,7 +242,7 @@ def set_months():
 # ==========================================
 # 화면 레이아웃 시작
 # ==========================================
-st.title("📱 빠른 고호계산기 (lc0.3)")
+st.title("📱 빠른 고호계산기 (lc0.4)")
 tab_calc, tab_analysis, tab_content, tab_briefing = st.tabs(["🧮 론계산기", "📊 분석", "📝 내용", "📢 브리핑"])
 
 # ==========================================
@@ -188,12 +317,17 @@ with tab_calc:
 # 탭 2: 분석 (Av 한도/보고서 산출 로직)
 # ==========================================
 with tab_analysis:
-    st.header("📊 연봉 및 한도 분석")
-    st.info("숫자 입력 후 빈 화면을 터치하면 콤마가 찍힙니다. (단위: 만원)")
+    # 🚨 초기화 버튼 배치 영역
+    h_col1, h_col2 = st.columns([3, 1])
+    with h_col1:
+        st.header("📊 연봉 및 한도 분석")
+        st.info("빈 화면 터치 시 콤마 자동 적용 (단위: 만원)")
+    with h_col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.button("🔴 초기화", on_click=reset_analysis, use_container_width=True)
 
     st.subheader("1. 연봉 입력")
     c1, c2, c3 = st.columns(3)
-    # 🚨 on_sal_change를 연결하여 입력 즉시 추정연봉 자동 계산 반영
     with c1: st.text_input("25년 (만원)", key="a_sal_25", on_change=on_sal_change, args=("a_sal_25",))
     with c2: st.text_input("26년 (만원)", key="a_sal_26", on_change=on_sal_change, args=("a_sal_26",))
     with c3: st.text_input("추정연봉 (만원)", key="a_sal_est", on_change=format_input, args=("a_sal_est",))
@@ -204,7 +338,6 @@ with tab_analysis:
     with c5: st.text_input("카드합계 (만원)", key="a_card_total", on_change=format_input, args=("a_card_total",))
     with c_short: st.text_input("단기카드 (만원)", key="a_short_card", on_change=format_input, args=("a_short_card",))
     
-    # 🚨 현재 총대출 실시간 합산 및 표시
     current_debt_sum = parse_int(st.session_state.a_debt_total) + parse_int(st.session_state.a_card_total) + parse_int(st.session_state.a_short_card)
     st.markdown(f"<p style='color:#d32f2f; font-weight:bold; font-size:16px; margin-top:-10px;'>💰 현재 총대출: {format_manwon(current_debt_sum * 10000)}</p>", unsafe_allow_html=True)
 
@@ -218,137 +351,31 @@ with tab_analysis:
     c9, c10, c11 = st.columns(3)
     with c9: st.text_input("최종 필요금액", key="a_final_req", on_change=format_input, args=("a_final_req",))
     with c10: st.number_input("은행 한도 비율 (%)", min_value=0.0, max_value=200.0, step=1.0, key="a_bank_pct")
-    # 🚨 가산 비율 수기 조절 칸 추가
     with c11: st.number_input("부대비용 가산 (%)", min_value=0.0, max_value=100.0, step=0.1, key="a_add_pct")
 
-    # 계산 버튼
-    if st.button("🚀 한도 산출 및 보고서 생성", type="primary", use_container_width=True):
-        # 1. 연봉 데이터 파싱 (실시간으로 바뀐 추정연봉 값을 그대로 사용)
-        s25 = parse_int(st.session_state.a_sal_25)
-        s26 = parse_int(st.session_state.a_sal_26)
-        s_est = parse_int(st.session_state.a_sal_est)
+    # 🚨 콜백을 연결한 한도 산출 버튼
+    if st.button("🚀 한도 산출 및 보고서 생성", type="primary", use_container_width=True, on_click=on_calc_limit_click):
+        st.toast("보고서 생성이 완료되었습니다! 탭을 이동하여 확인하세요.", icon="✅")
 
-        # 2. 대출금 데이터 파싱
-        debt = parse_int(st.session_state.a_debt_total)
-        card = parse_int(st.session_state.a_card_total)
-        short_card = parse_int(st.session_state.a_short_card)
-        total_current_debt_man = debt + card + short_card
-
-        # 3. 최종 필요금액 결정 (수기 조절 가능한 가산 비율 적용)
-        final_req_man = parse_int(st.session_state.a_final_req)
-        bank_pct = st.session_state.a_bank_pct
-        add_pct = st.session_state.a_add_pct
-        
-        # 적용할 승수 계산 (예: 14.5% -> 1.145)
-        multiplier = 1 + (add_pct / 100)
-        
-        if final_req_man == 0 and total_current_debt_man > 0:
-            # 총대출 * 가산비율 계산 (만원 단위에 10000을 곱해 원단위로 계산)
-            final_raw = int(total_current_debt_man * 10000 * multiplier)
-            
-            # 반올림/올림 보정 처리 (기존 Av 로직 유지)
-            if final_raw <= 40000000:
-                final_amt = ((final_raw + 250000) // 500000) * 500000
-            else:
-                final_amt = ((final_raw // 1000000) + 1) * 1000000 if final_raw % 1000000 >= 300000 else (final_raw // 1000000) * 1000000
-            
-            final_req_man = final_amt // 10000
-            # UI 입력창 업데이트를 위해 세션스테이트에 강제 기입
-            st.session_state.a_final_req = f"{int(final_req_man):,}"
-        else:
-            final_amt = final_req_man * 10000
-
-        sal_won = s_est * 10000
-
-        # 은행 한도 산출 (보정된 sal_won 기준)
-        bank_amt = round((sal_won * (bank_pct / 100)) / 500000) * 500000
-
-        # 햇살론 산출 (Av 로직 그대로)
-        base_sun = 7000000 if 20000000 <= sal_won <= 29999999 else 10000000 if 30000000 <= sal_won <= 44600000 else 0
-        sun_amt = min(max(0, final_amt - bank_amt), base_sun) if base_sun > 0 else 0
-        
-        if sun_amt > 0:
-            raw_sun_m = calculate_pmt(sun_amt, 11.0, 84)
-            sun_m = round(raw_sun_m / 10000) * 10000
-        else:
-            sun_m = 0
-
-        # 2금융권 산출 (최종금액 - 은행 - 햇살론)
-        sec2_amt = max(0, final_amt - bank_amt - sun_amt)
-        
-        # 월 납입금 계산
-        bp5 = calculate_pmt(bank_amt, 9.0, 60)
-        bp7 = calculate_pmt(bank_amt, 9.0, 84)
-        bp10 = calculate_pmt(bank_amt, 9.0, 120)
-        p_sec2 = calculate_pmt(sec2_amt, 15.0, 72)
-
-        # UI 출력용
+    # 🚨 콜백에서 계산된 데이터를 바탕으로 화면에 출력
+    if st.session_state.show_report:
         st.markdown("---")
         r1, r2, r3, r4 = st.columns(4)
-        r1.metric("최종 필요금액", format_manwon(final_amt))
-        r2.metric(f"은행 ({bank_pct}%)", format_manwon(bank_amt))
-        r3.metric("햇살론", format_manwon(sun_amt))
-        r4.metric("2금융", format_manwon(sec2_amt))
+        r1.metric("최종 필요금액", format_manwon(st.session_state.res_final_amt))
+        r2.metric(f"은행 ({st.session_state.a_bank_pct}%)", format_manwon(st.session_state.res_bank_amt))
+        r3.metric("햇살론", format_manwon(st.session_state.res_sun_amt))
+        r4.metric("2금융", format_manwon(st.session_state.res_sec2_amt))
 
-        st.markdown(f"<div style='background-color:#e3f2fd; padding:10px; border-radius:5px; margin-bottom:10px;'><span style='color:#1565c0; font-weight:bold;'>2금융 월납입(6년): {format_manwon(p_sec2)}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#e3f2fd; padding:10px; border-radius:5px; margin-bottom:10px;'><span style='color:#1565c0; font-weight:bold;'>2금융 월납입(6년): {format_manwon(st.session_state.res_p_sec2)}</span></div>", unsafe_allow_html=True)
 
-        stxt = format_manwon(sun_m) if sun_m > 0 else "•"
+        stxt = format_manwon(st.session_state.res_sun_m) if st.session_state.res_sun_m > 0 else "•"
         table_data = [
-            ["5년", format_manwon(bp5), stxt, format_manwon(p_sec2), format_manwon(bp5 + sun_m + p_sec2)],
-            ["7년", format_manwon(bp7), stxt, format_manwon(p_sec2), format_manwon(bp7 + sun_m + p_sec2)],
-            ["10년", format_manwon(bp10), stxt, format_manwon(p_sec2), format_manwon(bp10 + sun_m + p_sec2)]
+            ["5년", format_manwon(st.session_state.res_bp5), stxt, format_manwon(st.session_state.res_p_sec2), format_manwon(st.session_state.res_bp5 + st.session_state.res_sun_m + st.session_state.res_p_sec2)],
+            ["7년", format_manwon(st.session_state.res_bp7), stxt, format_manwon(st.session_state.res_p_sec2), format_manwon(st.session_state.res_bp7 + st.session_state.res_sun_m + st.session_state.res_p_sec2)],
+            ["10년", format_manwon(st.session_state.res_bp10), stxt, format_manwon(st.session_state.res_p_sec2), format_manwon(st.session_state.res_bp10 + st.session_state.res_sun_m + st.session_state.res_p_sec2)]
         ]
         df_calc = pd.DataFrame(table_data, columns=["기간", "은행", "햇살론", "2금융", "합계"])
         st.dataframe(df_calc, use_container_width=True, hide_index=True)
-
-        # ----------------------------------------------------
-        # 보고서 (내용/브리핑) 텍스트 자동 생성
-        # ----------------------------------------------------
-        cy = st.session_state.a_card_year
-        als = st.session_state.a_all_sim
-        ns = st.session_state.a_na_sim
-        
-        ratio_str = ""
-        if s25 == 0 and s26 == 0 and s_est > 0:
-            sal_block = f"추정연봉 {format_manwon(sal_won)}"
-            ratio_str = f"({int((final_amt / sal_won) * 100)}%)" if sal_won > 0 else ""
-        else:
-            sal_block = f"25납부 {s25}만원\n26납부 {s26}만원"
-            r_list = []
-            if s25 > 0: r_list.append(f"({int((final_amt / (s25*10000)) * 100)}%)")
-            if s26 > 0: r_list.append(f"({int((final_amt / (s26*10000)) * 100)}%)")
-            ratio_str = "".join(r_list)
-
-        # 카드 멘트 처리
-        card_text_parts = []
-        if card > 0: card_text_parts.append(f"카드 {card}만")
-        if short_card > 0: card_text_parts.append(f"단기 {short_card}만")
-        cd = ", ".join(card_text_parts) + ", " if card_text_parts else ""
-        
-        def line_text(p, b):
-            parts = [format_manwon(b)] + ([format_manwon(sun_m)] if sun_m > 0 else []) + ([format_manwon(p_sec2)] if p_sec2 > 0 else [])
-            return f"[{p}] {'+'.join(parts)} = {format_manwon(b + sun_m + p_sec2)}"
-
-        # 🚨 [내용] 텍스트 구성 (수기 조절한 가산비율 텍스트에 연동)
-        content = f"{sal_block}\n카드개설 {cy}년\n{cd}올시뮬 {als}, 나시뮬 {ns}\n{format_manwon(total_current_debt_man*10000)} 상환후 {add_pct:g}%포함 약 {format_manwon(final_amt)} {ratio_str}\n\n"
-        content += f"은행 {format_manwon(bank_amt)}\n5년 {format_manwon(bp5)}\n7년 {format_manwon(bp7)}\n10년 {format_manwon(bp10)}\n\n"
-        if sun_m > 0: content += f"햇살론 {format_manwon(sun_m)}\n{format_manwon(sun_amt)}\n\n"
-        if sec2_amt > 0: content += f"2금융 {format_manwon(sec2_amt)}\n{format_manwon(p_sec2)}\n\n"
-        content += f"{line_text('5년', bp5)}\n{line_text('7년', bp7)}\n{line_text('10년', bp10)}"
-
-        # 🚨 [브리핑] 텍스트 구성 (수기 조절한 가산비율 텍스트에 연동)
-        brief = f"고객은 가능하며\n{format_manwon(total_current_debt_man*10000)} 상환후 {add_pct:g}%포함 약 {format_manwon(final_amt)}\n\n"
-        brief += f"은행 {format_manwon(bank_amt)}(평균9%대)"
-        if sun_m > 0: brief += f"\n햇살론 {format_manwon(sun_amt)}(평균11%대)"
-        if sec2_amt > 0: brief += f"\n2금 {format_manwon(sec2_amt)}(평균15%대)(6년)"
-        if card > 0 or short_card > 0: brief += f"\n(카드+단기 금액 {format_manwon((card + short_card)*10000)} 포함)"
-        brief += f"\n\n{line_text('5년', bp5)}\n{line_text('7년', bp7)}\n{line_text('10년', bp10)}\n\n"
-        brief += "예상합니다.\n(요즘 은행이 잘안나오기에 은행금액을 75%로 계산했으나\n고객 인지시 연봉대비 65%~85%  말씀해주시면 됩니다.)\n수수료 인지 및 은행 5년 월불입액 동의 후 담당자분 성함, 수수료, \n고객 연락처 주시면 제가 전화 드리도록 하겠습니다!"
-
-        # Session State에 저장하여 탭 이동 시 출력
-        st.session_state.content_text = content.strip()
-        st.session_state.briefing_text = brief.strip()
-        st.toast("보고서 생성이 완료되었습니다! 탭을 이동하여 확인하세요.", icon="✅")
 
 # ==========================================
 # 탭 3: 내용 
