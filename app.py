@@ -429,51 +429,37 @@ with tab_payment:
     f_amt = 11 + diff
     f_sub = 10 + diff
 
-    html_table = f"""
-    <div style="overflow-x:auto; background:#ffffff; border-radius:8px; border:1px solid #cccccc; margin-top:8px;">
-        <table style="width:100%; border-collapse:collapse; text-align:center; table-layout:fixed; min-width:450px;">
-            <colgroup>
-                <col style="width:12%;"><col style="width:12%;"><col style="width:12%;">
-                <col style="width:14%;"><col style="width:14%;"><col style="width:14%;">
-                <col style="width:11%;"><col style="width:11%;">
-            </colgroup>
-            <thead>
-                <tr>
-                    <th colspan="3" style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; font-size:{f_th}px;">최종 월불입액 합계 (만원)</th>
-                    <th colspan="3" style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; font-size:{f_th}px;">은행</th>
-                    <th style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; font-size:{f_th}px;">2금융</th>
-                    <th style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; font-size:{f_th}px;">햇살론</th>
-                </tr>
-                <tr>
-                    <th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">5년</th>
-                    <th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">7년</th>
-                    <th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">10년</th>
-                    <th colspan="3" style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">평균 9%</th>
-                    <th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">16%</th>
-                    <th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">11%</th>
-                </tr>
-            </thead>
-            <tbody>
-    """
+    # 🚨 [마크다운 코드블록 오인 차단] 줄 앞 들여쓰기 공백 제거 및 다크모드 대응 글자색 고정
+    html_lines = [
+        '<div style="overflow-x:auto; background:#ffffff; color:#222222; border-radius:8px; border:1px solid #cccccc; margin-top:8px;">',
+        '<table style="width:100%; border-collapse:collapse; text-align:center; table-layout:fixed; min-width:450px; color:#222222;">',
+        '<colgroup><col style="width:12%;"><col style="width:12%;"><col style="width:12%;"><col style="width:14%;"><col style="width:14%;"><col style="width:14%;"><col style="width:11%;"><col style="width:11%;"></colgroup>',
+        '<thead>',
+        f'<tr><th colspan="3" style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; color:#222222; font-size:{f_th}px;">최종 월불입액 합계 (만원)</th><th colspan="3" style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; color:#222222; font-size:{f_th}px;">은행</th><th style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; color:#222222; font-size:{f_th}px;">2금융</th><th style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; color:#222222; font-size:{f_th}px;">햇살론</th></tr>',
+        f'<tr><th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; color:#333333; font-size:{f_th}px;">5년</th><th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; color:#333333; font-size:{f_th}px;">7년</th><th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; color:#333333; font-size:{f_th}px;">10년</th><th colspan="3" style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; color:#333333; font-size:{f_th}px;">평균 9%</th><th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; color:#333333; font-size:{f_th}px;">16%</th><th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; color:#333333; font-size:{f_th}px;">11%</th></tr>',
+        '</thead>',
+        '<tbody>'
+    ]
     for r in p_rows:
-        html_table += f"""
-                <tr>
-                    <td rowspan="2" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_tot}px; color:#d32f2f; background:#fff8e1; vertical-align:middle;">{r['tot5']}</td>
-                    <td rowspan="2" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_tot}px; color:#d32f2f; background:#fff8e1; vertical-align:middle;">{r['tot7']}</td>
-                    <td rowspan="2" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_tot}px; color:#d32f2f; background:#fff8e1; vertical-align:middle;">{r['tot10']}</td>
-                    <td colspan="3" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_amt}px; background:#fafafa;">{r['bank']:,}<br><span style="font-size:{f_sub}px; color:#555;">({r['title']})</span></td>
-                    <td style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_amt}px; background:#fafafa;">{r['sec']:,}</td>
-                    <td style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_amt}px; background:#fafafa;">{r['sun']:,}</td>
-                </tr>
-                <tr>
-                    <td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555;">5년<br><b>{r['b5']}</b></td>
-                    <td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555;">7년<br><b>{r['b7']}</b></td>
-                    <td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555;">10년<br><b>{r['b10']}</b></td>
-                    <td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555;">6년<br><b>{r['sec_pmt']}</b></td>
-                    <td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555;">7년<br><b>{r['sun_pmt']}</b></td>
-                </tr>
-        """
-    html_table += "</tbody></table></div>"
+        html_lines.append(
+            f'<tr>'
+            f'<td rowspan="2" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_tot}px; color:#d32f2f; background:#fff8e1; vertical-align:middle;">{r["tot5"]}</td>'
+            f'<td rowspan="2" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_tot}px; color:#d32f2f; background:#fff8e1; vertical-align:middle;">{r["tot7"]}</td>'
+            f'<td rowspan="2" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_tot}px; color:#d32f2f; background:#fff8e1; vertical-align:middle;">{r["tot10"]}</td>'
+            f'<td colspan="3" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_amt}px; color:#222222; background:#fafafa;">{r["bank"]:,}<br><span style="font-size:{f_sub}px; color:#555555;">({r["title"]})</span></td>'
+            f'<td style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_amt}px; color:#222222; background:#fafafa;">{r["sec"]:,}</td>'
+            f'<td style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_amt}px; color:#222222; background:#fafafa;">{r["sun"]:,}</td>'
+            f'</tr>'
+            f'<tr>'
+            f'<td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555555; background:#ffffff;">5년<br><b style="color:#222222;">{r["b5"]}</b></td>'
+            f'<td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555555; background:#ffffff;">7년<br><b style="color:#222222;">{r["b7"]}</b></td>'
+            f'<td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555555; background:#ffffff;">10년<br><b style="color:#222222;">{r["b10"]}</b></td>'
+            f'<td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555555; background:#ffffff;">6년<br><b style="color:#222222;">{r["sec_pmt"]}</b></td>'
+            f'<td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555555; background:#ffffff;">7년<br><b style="color:#222222;">{r["sun_pmt"]}</b></td>'
+            f'</tr>'
+        )
+    html_lines.append('</tbody></table></div>')
+    html_table = "\n".join(html_lines)
     st.markdown(html_table, unsafe_allow_html=True)
 
 # ==========================================
