@@ -98,6 +98,19 @@ if 'content_text' not in st.session_state: st.session_state.content_text = "분�
 if 'briefing_text' not in st.session_state: st.session_state.briefing_text = "분석 탭에서 [보고서 생성]을 눌러주세요."
 if 'show_report' not in st.session_state: st.session_state.show_report = False
 
+# 🚨 [신규] 월불입액 탭 전용 Session State 초기화 (기본값 0원)
+for pk in ['p_payoff', 'p_sal25', 'p_base', 'p_sal26', 'p_man1', 'p_man2']:
+    if pk not in st.session_state: st.session_state[pk] = "0"
+if 'p_use_sun' not in st.session_state: st.session_state.p_use_sun = True
+if 'p_font_size' not in st.session_state: st.session_state.p_font_size = 13
+
+def reset_payment():
+    for pk in ['p_payoff', 'p_sal25', 'p_base', 'p_sal26', 'p_man1', 'p_man2']:
+        st.session_state[pk] = "0"
+    st.session_state.p_use_sun = True
+    st.session_state.p_font_size = 13
+    st.toast("월불입액 분석표가 초기화되었습니다!", icon="🔄")
+
 # -------------------------------------------------------------------------
 # 🚨 [신규 콜백] 에러 방지를 위한 백그라운드 연산 및 데이터 저장 함수
 # -------------------------------------------------------------------------
@@ -214,6 +227,7 @@ def on_calc_limit_click():
     st.session_state.briefing_text = brief.strip()
     st.session_state.show_report = True
 
+# 🚨 [신규 콜백] 전체 분석 초기화
 def reset_analysis():
     for key in ['a_sal_25', 'a_sal_26', 'a_sal_est', 'a_debt_total', 'a_card_total', 'a_short_card', 'a_final_req']:
         st.session_state[key] = "0"
@@ -242,7 +256,6 @@ def set_months():
 # 화면 레이아웃 시작
 # ==========================================
 st.title("📱 빠른 고호계산기 (lc0.5)")
-# 🚨 [신규 탭] 월불입액 탭 추가
 tab_calc, tab_payment, tab_analysis, tab_content, tab_briefing = st.tabs(["🧮 론계산기", "💳 월불입액", "📊 분석", "📝 내용", "📢 브리핑"])
 
 # ==========================================
@@ -314,109 +327,154 @@ with tab_calc:
             st.warning("대출 금액과 기간을 0보다 큰 숫자로 올바르게 입력해주세요.")
 
 # ==========================================
-# 🚨 탭 2: [월불입액] (신규 엑셀형 계산표)
+# 탭 2: 월불입액 (엑셀 8열 분할 분석표)
 # ==========================================
 with tab_payment:
-    st.header("💳 월불입액 분석표")
-    
-    # 세션 상태 초기화 (월불입액 전용)
-    if 'p_payoff' not in st.session_state: st.session_state.p_payoff = 3900
-    if 'p_sal25' not in st.session_state: st.session_state.p_sal25 = 0
-    if 'p_base' not in st.session_state: st.session_state.p_base = 2500
-    if 'p_sal26' not in st.session_state: st.session_state.p_sal26 = 0
-    if 'p_man1' not in st.session_state: st.session_state.p_man1 = 0
-    if 'p_man2' not in st.session_state: st.session_state.p_man2 = 0
-    if 'p_use_sun' not in st.session_state: st.session_state.p_use_sun = True
+    p_hdr1, p_hdr2, p_hdr3 = st.columns([2.2, 1.3, 1.0], vertical_alignment="bottom")
+    with p_hdr1:
+        st.header("📊 월불입액 분석표")
+    with p_hdr2:
+        st.selectbox(
+            "글자 크기",
+            options=[13, 15, 20, 25, 30, 35, 40],
+            format_func=lambda x: f"글자: 기본(13)" if x == 13 else (f"글자: 크게(15)" if x == 15 else (f"글자: 최대(40)" if x == 40 else f"글자: {x}")),
+            key="p_font_size"
+        )
+    with p_hdr3:
+        st.button("🔄 전체 초기화", on_click=reset_payment, use_container_width=True, key="btn_reset_payment")
 
-    # 리셋 함수
-    def reset_payment():
-        st.session_state.p_payoff = 0
-        st.session_state.p_sal25 = 0
-        st.session_state.p_base = 0
-        st.session_state.p_sal26 = 0
-        st.session_state.p_man1 = 0
-        st.session_state.p_man2 = 0
-        st.session_state.p_use_sun = True
+    pc1, pc2 = st.columns(2)
+    with pc1:
+        st.text_input("완납금액 (만원)", key="p_payoff", on_change=format_input, args=("p_payoff",))
+        st.text_input("은행금액 (만원)", key="p_base", on_change=format_input, args=("p_base",))
+    with pc2:
+        st.text_input("25년 연봉 (만원)", key="p_sal25", on_change=format_input, args=("p_sal25",))
+        st.text_input("26년 연봉 (만원)", key="p_sal26", on_change=format_input, args=("p_sal26",))
 
-    c_p1, c_p2 = st.columns(2)
-    st.session_state.p_payoff = c_p1.number_input("완납금액 (만원)", value=st.session_state.p_payoff, step=100)
-    st.session_state.p_sal25 = c_p2.number_input("25년 연봉 (만원)", value=st.session_state.p_sal25, step=100)
-    st.session_state.p_base = c_p1.number_input("은행금액 (만원)", value=st.session_state.p_base, step=100)
-    st.session_state.p_sal26 = c_p2.number_input("26년 연봉 (만원)", value=st.session_state.p_sal26, step=100)
+    pm1, pm2 = st.columns(2)
+    with pm1:
+        st.text_input("수기입력 1 - 은행금액 (만원)", key="p_man1", on_change=format_input, args=("p_man1",))
+    with pm2:
+        st.text_input("수기입력 2 - 은행금액 (만원)", key="p_man2", on_change=format_input, args=("p_man2",))
 
-    # 연봉 추정 및 햇살론 스위치
-    s25_p = st.session_state.p_sal25; s26_p = st.session_state.p_sal26
-    avg_sal_p = (s25_p + s26_p) / 2 if s25_p > 0 and s26_p > 0 else s25_p if s25_p > 0 else s26_p if s26_p > 0 else 0
-    
-    col_sal, col_sw, col_btn = st.columns([2, 1, 1])
-    col_sal.info(f"추정 연봉: **{int(avg_sal_p):,} 만원**")
-    st.session_state.p_use_sun = col_sw.toggle("햇살론(11%)", value=st.session_state.p_use_sun)
-    col_btn.button("🔄 전체 초기화", on_click=reset_payment, use_container_width=True)
+    p_s25 = parse_int(st.session_state.p_sal25)
+    p_s26 = parse_int(st.session_state.p_sal26)
+    if p_s25 > 0 and p_s26 > 0:
+        avg_sal_p = (p_s25 + p_s26) / 2
+    elif p_s25 > 0:
+        avg_sal_p = p_s25
+    elif p_s26 > 0:
+        avg_sal_p = p_s26
+    else:
+        avg_sal_p = 0
 
-    # PMT 계산 유틸리티 (단위: 만원)
+    bar1, bar2 = st.columns([2.5, 1.5], vertical_alignment="center")
+    with bar1:
+        st.markdown(f"<div style='background:#e3f2fd; padding:8px 12px; border-radius:6px; border:1px solid #bbdefb; color:#0d47a1; font-weight:bold;'>추정 연봉: {int(avg_sal_p):,} 만원</div>", unsafe_allow_html=True)
+    with bar2:
+        st.toggle("햇살론(11%) 적용", key="p_use_sun")
+
     def pmt_manwon(p_man, rate, months):
-        if p_man <= 0: return 0
-        r = (rate / 100) / 12
+        if p_man <= 0:
+            return 0
+        r = (rate / 100.0) / 12.0
         p_won = p_man * 10000
-        if r == 0: return round((p_won / months) / 10000)
+        if r == 0:
+            return round((p_won / months) / 10000)
         pmt_won = math.floor((p_won * r * ((1 + r) ** months)) / (((1 + r) ** months) - 1))
         return round(pmt_won / 10000)
 
-    # 행 단위 계산 및 반환
-    def calc_row(bank_amt, title):
-        remain = max(0, st.session_state.p_payoff - bank_amt)
-        sun_amt = 0
-        if st.session_state.p_use_sun && remain > 0 && avg_sal_p > 0:
-            let base_sun = 0;
-            if (avg_sal_p >= 2000 && avg_sal_p <= 2999) base_sun = 700;
-            else if (avg_sal_p >= 3000 && avg_sal_p <= 4460) base_sun = 1000;
-            sun_amt = Math.min(remain, base_sun);
-        
-        let sec_amt = Math.max(0, remain - sun_amt);
+    payoff_val = parse_int(st.session_state.p_payoff)
+    base_val = parse_int(st.session_state.p_base)
+    man1_val = parse_int(st.session_state.p_man1)
+    man2_val = parse_int(st.session_state.p_man2)
+    use_sun_val = st.session_state.p_use_sun
 
-        let b5 = pmt_manwon(bank_amt, 9.0, 60);
-        let b7 = pmt_manwon(bank_amt, 9.0, 84);
-        let b10 = pmt_manwon(bank_amt, 9.0, 120);
-        let sec_pmt = pmt_manwon(sec_amt, 16.0, 72);
-        let sun_pmt = pmt_manwon(sun_amt, 11.0, 84);
+    def calc_row(bank_amt, title_str):
+        remain = max(0, payoff_val - bank_amt)
+        sun_amt = 0
+        if use_sun_val and remain > 0 and avg_sal_p > 0:
+            base_sun = 0
+            if 2000 <= avg_sal_p <= 2999:
+                base_sun = 700
+            elif 3000 <= avg_sal_p <= 4460:
+                base_sun = 1000
+            sun_amt = min(remain, base_sun)
+
+        sec_amt = max(0, remain - sun_amt)
+
+        b5 = pmt_manwon(bank_amt, 9.0, 60)
+        b7 = pmt_manwon(bank_amt, 9.0, 84)
+        b10 = pmt_manwon(bank_amt, 9.0, 120)
+        sec_pmt = pmt_manwon(sec_amt, 16.0, 72)
+        sun_pmt = pmt_manwon(sun_amt, 11.0, 84)
 
         return {
-            "title": title, "bank": bank_amt, "sec": sec_amt, "sun": sun_amt,
+            "title": title_str, "bank": bank_amt, "sec": sec_amt, "sun": sun_amt,
             "b5": b5, "b7": b7, "b10": b10, "sec_pmt": sec_pmt, "sun_pmt": sun_pmt,
             "tot5": b5 + sec_pmt + sun_pmt, "tot7": b7 + sec_pmt + sun_pmt, "tot10": b10 + sec_pmt + sun_pmt
         }
 
-    # 데이터 생성
-    base = st.session_state.p_base
-    man1 = st.session_state.p_man1; man2 = st.session_state.p_man2
-    
-    rows = [
-        calc_row(max(0, base - 500), "은행금액 -500"),
-        calc_row(base, "은행금액"),
-        calc_row(base + 500, "은행금액 +500"),
-        calc_row(man1, "수기입력"),
-        calc_row(man2, "수기입력")
+    p_rows = [
+        calc_row(max(0, base_val - 500), "은행금액-500"),
+        calc_row(base_val, "은행금액"),
+        calc_row(base_val + 500 if base_val > 0 else 0, "은행금액+500"),
+        calc_row(man1_val, "수기입력 1"),
+        calc_row(man2_val, "수기입력 2")
     ]
 
-    # DataFrame 생성 및 출력
-    df_data = []
-    for r in rows:
-        df_data.append({
-            "항목": r["title"], "은행": r["bank"], "2금융": r["sec"], "햇살론": r["sun"],
-            "5년": r["tot5"], "7년": r["tot7"], "10년": r["tot10"],
-            "은행(5년)": r["b5"], "은행(7년)": r["b7"], "은행(10년)": r["b10"],
-            "2금융(6년)": r["sec_pmt"], "햇살론(7년)": r["sun_pmt"]
-        })
-    df_payment = pd.DataFrame(df_data)
-    
-    st.dataframe(df_payment, use_container_width=True, hide_index=True)
-    
-    # 수기 입력칸
-    st.write("📝 수기입력 (은행금액)")
-    c_m1, c_m2 = st.columns(2)
-    st.session_state.p_man1 = c_m1.number_input("수기입력 1 (만원)", value=st.session_state.p_man1, step=100)
-    st.session_state.p_man2 = c_m2.number_input("수기입력 2 (만원)", value=st.session_state.p_man2, step=100)
+    diff = st.session_state.p_font_size - 13
+    f_th = 10 + diff
+    f_tot = 12 + diff
+    f_amt = 11 + diff
+    f_sub = 10 + diff
 
+    html_table = f"""
+    <div style="overflow-x:auto; background:#ffffff; border-radius:8px; border:1px solid #cccccc; margin-top:8px;">
+        <table style="width:100%; border-collapse:collapse; text-align:center; table-layout:fixed; min-width:450px;">
+            <colgroup>
+                <col style="width:12%;"><col style="width:12%;"><col style="width:12%;">
+                <col style="width:14%;"><col style="width:14%;"><col style="width:14%;">
+                <col style="width:11%;"><col style="width:11%;">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th colspan="3" style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; font-size:{f_th}px;">최종 월불입액 합계 (만원)</th>
+                    <th colspan="3" style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; font-size:{f_th}px;">은행</th>
+                    <th style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; font-size:{f_th}px;">2금융</th>
+                    <th style="border:1px solid #ccc; padding:6px 2px; background:#e0e0e0; font-size:{f_th}px;">햇살론</th>
+                </tr>
+                <tr>
+                    <th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">5년</th>
+                    <th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">7년</th>
+                    <th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">10년</th>
+                    <th colspan="3" style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">평균 9%</th>
+                    <th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">16%</th>
+                    <th style="border:1px solid #ccc; padding:6px 2px; background:#f0f4f8; font-size:{f_th}px;">11%</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+    for r in p_rows:
+        html_table += f"""
+                <tr>
+                    <td rowspan="2" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_tot}px; color:#d32f2f; background:#fff8e1; vertical-align:middle;">{r['tot5']}</td>
+                    <td rowspan="2" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_tot}px; color:#d32f2f; background:#fff8e1; vertical-align:middle;">{r['tot7']}</td>
+                    <td rowspan="2" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_tot}px; color:#d32f2f; background:#fff8e1; vertical-align:middle;">{r['tot10']}</td>
+                    <td colspan="3" style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_amt}px; background:#fafafa;">{r['bank']:,}<br><span style="font-size:{f_sub}px; color:#555;">({r['title']})</span></td>
+                    <td style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_amt}px; background:#fafafa;">{r['sec']:,}</td>
+                    <td style="border:1px solid #ccc; padding:6px 2px; font-weight:bold; font-size:{f_amt}px; background:#fafafa;">{r['sun']:,}</td>
+                </tr>
+                <tr>
+                    <td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555;">5년<br><b>{r['b5']}</b></td>
+                    <td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555;">7년<br><b>{r['b7']}</b></td>
+                    <td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555;">10년<br><b>{r['b10']}</b></td>
+                    <td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555;">6년<br><b>{r['sec_pmt']}</b></td>
+                    <td style="border:1px solid #ccc; padding:6px 2px; font-size:{f_sub}px; color:#555;">7년<br><b>{r['sun_pmt']}</b></td>
+                </tr>
+        """
+    html_table += "</tbody></table></div>"
+    st.markdown(html_table, unsafe_allow_html=True)
 
 # ==========================================
 # 탭 3: 분석 (Av 한도/보고서 산출 로직)
