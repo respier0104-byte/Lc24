@@ -34,7 +34,7 @@ div[data-testid="column"] {
 </style>
 """, unsafe_allow_html=True)
 
-st.set_page_config(page_title="고호계산기 lc0.4", page_icon="📱", layout="centered")
+st.set_page_config(page_title="고호계산기 lc0.5", page_icon="📱", layout="centered")
 
 # ==========================================
 # 전역 변수 및 유틸리티 함수
@@ -214,7 +214,6 @@ def on_calc_limit_click():
     st.session_state.briefing_text = brief.strip()
     st.session_state.show_report = True
 
-# 🚨 [신규 콜백] 전체 분석 초기화
 def reset_analysis():
     for key in ['a_sal_25', 'a_sal_26', 'a_sal_est', 'a_debt_total', 'a_card_total', 'a_short_card', 'a_final_req']:
         st.session_state[key] = "0"
@@ -242,8 +241,9 @@ def set_months():
 # ==========================================
 # 화면 레이아웃 시작
 # ==========================================
-st.title("📱 빠른 고호계산기 (lc0.4)")
-tab_calc, tab_analysis, tab_content, tab_briefing = st.tabs(["🧮 론계산기", "📊 분석", "📝 내용", "📢 브리핑"])
+st.title("📱 빠른 고호계산기 (lc0.5)")
+# 🚨 [신규 탭] 월불입액 탭 추가
+tab_calc, tab_payment, tab_analysis, tab_content, tab_briefing = st.tabs(["🧮 론계산기", "💳 월불입액", "📊 분석", "📝 내용", "📢 브리핑"])
 
 # ==========================================
 # 탭 1: 론 계산기 
@@ -314,7 +314,112 @@ with tab_calc:
             st.warning("대출 금액과 기간을 0보다 큰 숫자로 올바르게 입력해주세요.")
 
 # ==========================================
-# 탭 2: 분석 (Av 한도/보고서 산출 로직)
+# 🚨 탭 2: [월불입액] (신규 엑셀형 계산표)
+# ==========================================
+with tab_payment:
+    st.header("💳 월불입액 분석표")
+    
+    # 세션 상태 초기화 (월불입액 전용)
+    if 'p_payoff' not in st.session_state: st.session_state.p_payoff = 3900
+    if 'p_sal25' not in st.session_state: st.session_state.p_sal25 = 0
+    if 'p_base' not in st.session_state: st.session_state.p_base = 2500
+    if 'p_sal26' not in st.session_state: st.session_state.p_sal26 = 0
+    if 'p_man1' not in st.session_state: st.session_state.p_man1 = 0
+    if 'p_man2' not in st.session_state: st.session_state.p_man2 = 0
+    if 'p_use_sun' not in st.session_state: st.session_state.p_use_sun = True
+
+    # 리셋 함수
+    def reset_payment():
+        st.session_state.p_payoff = 0
+        st.session_state.p_sal25 = 0
+        st.session_state.p_base = 0
+        st.session_state.p_sal26 = 0
+        st.session_state.p_man1 = 0
+        st.session_state.p_man2 = 0
+        st.session_state.p_use_sun = True
+
+    c_p1, c_p2 = st.columns(2)
+    st.session_state.p_payoff = c_p1.number_input("완납금액 (만원)", value=st.session_state.p_payoff, step=100)
+    st.session_state.p_sal25 = c_p2.number_input("25년 연봉 (만원)", value=st.session_state.p_sal25, step=100)
+    st.session_state.p_base = c_p1.number_input("은행금액 (만원)", value=st.session_state.p_base, step=100)
+    st.session_state.p_sal26 = c_p2.number_input("26년 연봉 (만원)", value=st.session_state.p_sal26, step=100)
+
+    # 연봉 추정 및 햇살론 스위치
+    s25_p = st.session_state.p_sal25; s26_p = st.session_state.p_sal26
+    avg_sal_p = (s25_p + s26_p) / 2 if s25_p > 0 and s26_p > 0 else s25_p if s25_p > 0 else s26_p if s26_p > 0 else 0
+    
+    col_sal, col_sw, col_btn = st.columns([2, 1, 1])
+    col_sal.info(f"추정 연봉: **{int(avg_sal_p):,} 만원**")
+    st.session_state.p_use_sun = col_sw.toggle("햇살론(11%)", value=st.session_state.p_use_sun)
+    col_btn.button("🔄 전체 초기화", on_click=reset_payment, use_container_width=True)
+
+    # PMT 계산 유틸리티 (단위: 만원)
+    def pmt_manwon(p_man, rate, months):
+        if p_man <= 0: return 0
+        r = (rate / 100) / 12
+        p_won = p_man * 10000
+        if r == 0: return round((p_won / months) / 10000)
+        pmt_won = math.floor((p_won * r * ((1 + r) ** months)) / (((1 + r) ** months) - 1))
+        return round(pmt_won / 10000)
+
+    # 행 단위 계산 및 반환
+    def calc_row(bank_amt, title):
+        remain = max(0, st.session_state.p_payoff - bank_amt)
+        sun_amt = 0
+        if st.session_state.p_use_sun && remain > 0 && avg_sal_p > 0:
+            let base_sun = 0;
+            if (avg_sal_p >= 2000 && avg_sal_p <= 2999) base_sun = 700;
+            else if (avg_sal_p >= 3000 && avg_sal_p <= 4460) base_sun = 1000;
+            sun_amt = Math.min(remain, base_sun);
+        
+        let sec_amt = Math.max(0, remain - sun_amt);
+
+        let b5 = pmt_manwon(bank_amt, 9.0, 60);
+        let b7 = pmt_manwon(bank_amt, 9.0, 84);
+        let b10 = pmt_manwon(bank_amt, 9.0, 120);
+        let sec_pmt = pmt_manwon(sec_amt, 16.0, 72);
+        let sun_pmt = pmt_manwon(sun_amt, 11.0, 84);
+
+        return {
+            "title": title, "bank": bank_amt, "sec": sec_amt, "sun": sun_amt,
+            "b5": b5, "b7": b7, "b10": b10, "sec_pmt": sec_pmt, "sun_pmt": sun_pmt,
+            "tot5": b5 + sec_pmt + sun_pmt, "tot7": b7 + sec_pmt + sun_pmt, "tot10": b10 + sec_pmt + sun_pmt
+        }
+
+    # 데이터 생성
+    base = st.session_state.p_base
+    man1 = st.session_state.p_man1; man2 = st.session_state.p_man2
+    
+    rows = [
+        calc_row(max(0, base - 500), "은행금액 -500"),
+        calc_row(base, "은행금액"),
+        calc_row(base + 500, "은행금액 +500"),
+        calc_row(man1, "수기입력"),
+        calc_row(man2, "수기입력")
+    ]
+
+    # DataFrame 생성 및 출력
+    df_data = []
+    for r in rows:
+        df_data.append({
+            "항목": r["title"], "은행": r["bank"], "2금융": r["sec"], "햇살론": r["sun"],
+            "5년": r["tot5"], "7년": r["tot7"], "10년": r["tot10"],
+            "은행(5년)": r["b5"], "은행(7년)": r["b7"], "은행(10년)": r["b10"],
+            "2금융(6년)": r["sec_pmt"], "햇살론(7년)": r["sun_pmt"]
+        })
+    df_payment = pd.DataFrame(df_data)
+    
+    st.dataframe(df_payment, use_container_width=True, hide_index=True)
+    
+    # 수기 입력칸
+    st.write("📝 수기입력 (은행금액)")
+    c_m1, c_m2 = st.columns(2)
+    st.session_state.p_man1 = c_m1.number_input("수기입력 1 (만원)", value=st.session_state.p_man1, step=100)
+    st.session_state.p_man2 = c_m2.number_input("수기입력 2 (만원)", value=st.session_state.p_man2, step=100)
+
+
+# ==========================================
+# 탭 3: 분석 (Av 한도/보고서 산출 로직)
 # ==========================================
 with tab_analysis:
     # 🚨 초기화 버튼 배치 영역
@@ -378,7 +483,7 @@ with tab_analysis:
         st.dataframe(df_calc, use_container_width=True, hide_index=True)
 
 # ==========================================
-# 탭 3: 내용 
+# 탭 4: 내용 
 # ==========================================
 with tab_content:
     st.header("📝 고객 내용")
@@ -386,7 +491,7 @@ with tab_content:
     st.code(st.session_state.content_text, language="text")
 
 # ==========================================
-# 탭 4: 브리핑
+# 탭 5: 브리핑
 # ==========================================
 with tab_briefing:
     st.header("📢 브리핑 멘트")
